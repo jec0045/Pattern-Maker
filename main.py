@@ -46,10 +46,9 @@ def prep_dmc_color_lst():
     dmc_colors = dmc_colors.with_columns(pl.concat_list("R", "G", "B").alias("RGB"))
     # Combine the "R", "G", and "B" columns into one column as a list
 
-    color_list = dmc_colors["RGB"].to_list()  # Format as a list
     color_df = dmc_colors.to_pandas()  # Format as a pandas dataframe
 
-    return color_list, color_df
+    return  color_df
 
 
 def rgb_to_lab(rgb):
@@ -188,23 +187,95 @@ def gpt_delta_e_ciede2000(color1, color2):
     return delta_E
 
 
-def compare_colors(img_colors, dmc_colors):
-    # Create dataframe
-    column_names = ["Original RGB", "Stitch Count", "Color Match RGB", "FLoss Number", "Floss Name"]
-    df = pd.DataFrame(columns=column_names)
+# def compare_colors(img_colors, dmc_df):
+#     dmc_colors = dmc_df["RGB"].to_list()  # Format as a list
+#     # column_names = ["Original RGB", "Stitch Count", "Color Match RGB", "Floss Number", "Floss Name"]
+#     # schema = {"Original RGBA": pl.String, "Stitch Count": pl.Int64, "Color Match RGB": pl.String,
+#     #           "DMC Number": pl.Int64, "Floss Name": pl.String}
 
-    # Find color matches
+#     # Create an empty DataFrame from the schema
+#     df = pl.DataFrame()
+
+#     # Find color matches
+#     for key, value in img_colors.items():
+#         if key[3] > 0 and key[0] > 0:
+#             rgb = [key[0], key[1], key[2]]
+#             best_match = closest_color(rgb, dmc_colors)
+
+#             # print(key, ".....", best_match)
+#             # print(type(best_match))
+#             best_match_R = best_match[0]
+#             best_match_G = best_match[1]
+#             best_match_B = best_match[2]
+#             # print(best_match_R, best_match_G, best_match_B)
+
+#             dmc_idx = dmc_df.index[(dmc_df["R"] == best_match_R) &
+#                                    (dmc_df["G"] == best_match_G) &
+#                                    (dmc_df["B"] == best_match_B)].astype(int)
+#             dmc_num = dmc_df.loc[dmc_idx,'Floss']
+#             dmc_name =  dmc_df.loc[dmc_idx,'DMC Name']
+
+#             original_rgba = ' '.join(str(item) for item in key)
+#             formatted_match = string_repr = np.array2string(best_match, precision=0, separator=', ')
+
+
+#             # print(formatted_match)
+#             # print(type(formatted_match))
+
+#             new_row = pl.DataFrame({"Original RGBA": original_rgba, "Stitch Count": value,
+#                                     "Color Match RGB": formatted_match,
+#                                     "DMC Number": dmc_num, "Floss Name": dmc_name})
+#             # df.extend(new_row)
+#             df = pl.concat([df, new_row], ignore_index=True)
+#     print(df)
+#     return df
+
+def compare_colors(img_colors, dmc_df):
+    dmc_colors = dmc_df["RGB"].to_list()
+    
+    df = pd.DataFrame(columns=[
+        "Original RGBA",
+        "Stitch Count",
+        "Color Match RGB",
+        "DMC Number",
+        "Floss Name"
+    ])
+
     for key, value in img_colors.items():
         if key[3] > 0 and key[0] > 0:
             rgb = [key[0], key[1], key[2]]
             best_match = closest_color(rgb, dmc_colors)
-            print(key, ".....", best_match)
-            new_row = {"Original RGBA": key,
-                        "Stitch Count": value,
-                         "Color Match RGB": best_match,
-                         "DMC Number": "",
-                         "Floss Name": ""}
 
+            best_match_R, best_match_G, best_match_B = best_match
+
+            match_rows = dmc_df[
+                (dmc_df["R"] == best_match_R) &
+                (dmc_df["G"] == best_match_G) &
+                (dmc_df["B"] == best_match_B)
+            ]
+
+            if match_rows.empty:
+                continue
+
+            dmc_num = match_rows.iloc[0]["Floss"]
+            dmc_name = match_rows.iloc[0]["DMC Name"]
+
+            original_rgba = ' '.join(map(str, key))
+            formatted_match = np.array2string(
+                np.array(best_match),
+                precision=0,
+                separator=', '
+            )
+
+            df.loc[len(df)] = [
+                original_rgba,
+                value,
+                formatted_match,
+                dmc_num,
+                dmc_name
+            ]
+
+    return df
 
 
 
@@ -212,7 +283,9 @@ def compare_colors(img_colors, dmc_colors):
 # output_path = crop_transparent_border(r"Sample_Images\mudkip.png")
 output_path = r"Sample_Images\mudkip_crop.png"
 img_color_dict = get_RGBA_list(output_path)
-dmc_colors_list, dmc_colors_dict = prep_dmc_color_lst()
-# compare_colors(img_color_dict, dmc_colors_list)
+dmc_colors_df = prep_dmc_color_lst()
+# print(dmc_colors_df)
 
+output = compare_colors(img_color_dict, dmc_colors_df)
 
+print(output)
