@@ -1,66 +1,42 @@
 from PIL import Image
 import numpy as np
 import polars as pl
+import pandas as pd
 from colormath.color_objects import sRGBColor, LabColor
 from colormath.color_conversions import convert_color
-from colormath.color_diff import delta_e_cie2000
-from coloraide import Color
 from collections import Counter
+import math
 # pl.Config.set_tbl_rows(-1)  # Show all rows in any printed polars dataframes
 
 
-def crop_transparent_border(image_path, output_path):
+def crop_transparent_border(image_path):
     image = Image.open(image_path)  # Open the image
     bbox = image.getbbox()  # Get the bounding box of non-transparent pixels
+    output_path = image_path  # Default the output to the original image
 
     if bbox:
+        output_path = output_path.replace(".png", "_crop.png")
         cropped_image = image.crop(bbox)  # Crop the image to the bounding box
         cropped_image.save(output_path)  # Save the cropped image
         print(f"Cropped image saved to {output_path}")
     else:
         print("No non-transparent content found in the image.")
 
-
-def get_RGB_list(image_path):
-    im = Image.open(r"Sample_Images\mudkip_crop.png").convert('RGB')  # Open and convert image to RGB
-    na = np.array(im)  # Convert to NumPy array
-
-    # Reshape array to list of RGB values and find unique colors
-    unique_colors, counts = np.unique(na.reshape(-1, 3), axis=0, return_counts=True)
-
-    unique_colors_list = unique_colors.tolist()
-    count_list = counts.tolist()
-    dataframe = pl.DataFrame({"Original Color RGB": unique_colors_list, "Occurrences": count_list})
-
-    return dataframe
+    return output_path
 
 
 def get_RGBA_list(image_path):
     img = Image.open(image_path).convert('RGBA')
 
-    # Extract RGB values for all pixels
-    width, height = img.size
+    width, height = img.size  # Extract RGB values for all pixels
     rgb_values = [img.getpixel((x, y)) for y in range(height) for x in range(width)]
 
     rgb_counts = Counter(rgb_values)
     rgb_dict = dict(rgb_counts)
-    
-    return rgb_dict
 
-    # # Filter out fully transparent pixels (alpha = 0)
-    # non_transparent_pixels = img.get_flattened_data()  
-    # colors = [color for color in non_transparent_pixels if color[3] > 0]
-    # print(type(colors))
-    # color_count = len(set(colors))
+    sorted_dict = dict(sorted(rgb_dict.items()))
 
-
-    # d = Counter(colors)
-    # print("d", d)
-
-    # print(dict(d))
-
-    # print(f"Unique non-transparent colors: {color_count}")
-
+    return sorted_dict
 
 
 def prep_dmc_color_lst():
@@ -70,28 +46,10 @@ def prep_dmc_color_lst():
     dmc_colors = dmc_colors.with_columns(pl.concat_list("R", "G", "B").alias("RGB"))
     # Combine the "R", "G", and "B" columns into one column as a list
 
-    # dmc_colors = dmc_colors.with_columns(
-    #     pl.col("RGB")
-    #     .map_elements(rgb_to_lab, return_dtype=pl.List(pl.Float64))
-    #     .alias("Lab Color"))
+    color_list = dmc_colors["RGB"].to_list()  # Format as a list
+    color_df = dmc_colors.to_pandas()  # Format as a pandas dataframe
 
-    # dmc_colors_lst = dmc_colors["Lab Color"].to_list()
-    # print(dmc_colors_lst)
-
-    # dmc_colors_dict = {}
-    # dmc_lab_colors_lst = []
-    # for color in dmc_colors.iter_rows():
-    #     lab_color = rgb_to_lab(color[6])  # Convert RGB to Lab Color
-    #     dmc_colors_dict[color[0]] = lab_color  # Append dict with Floss and Lab Color
-    #     dmc_lab_colors_lst.append(lab_color)
-    #     # group = {color[0]: lab_color}  # Create a dict entry with the Floss Number and Lab Color
-
-    # print(dmc_colors_dict)
-    # print(dmc_lab_colors_lst)
-
-    # return dmc_lab_colors_lst, dmc_colors_dict
-
-    return dmc_colors["RGB"].to_list()
+    return color_list, color_df
 
 
 def rgb_to_lab(rgb):
@@ -110,18 +68,16 @@ def rgb_to_lab(rgb):
     return lab
 
 
-def closest_color_lab(target, colors):
-    print(target)
-
-    target_lab = rgb_to_lab(target)
-
-    # print(target_lab)
+def closest_color(target, colors):
+    tgt = rgb_to_lab([target[0], target[1], target[2]])
 
     best_color = None
     best_distance = float("inf")
 
     for color in colors:
-        d = delta_e_cie2000(target_lab, rgb_to_lab(color))
+        c = rgb_to_lab([color[0], color[1], color[2]])
+
+        d = gpt_delta_e_ciede2000(tgt, c) # perceptual distance
         if d < best_distance:
             best_distance = d
             best_color = color
@@ -129,33 +85,134 @@ def closest_color_lab(target, colors):
     return best_color
 
 
+def gpt_delta_e_ciede2000(color1, color2):
+    """
+    Calculate CIEDE2000 color difference between two Lab colors.
+    lab1, lab2: tuples (L, a, b)
+    Returns: ΔE00
+    """
 
-def closest_color_coloraide(target, colors):
-    tgt = Color(f"srgb({target[0]}, {target[1]}, {target[2]})").convert("lab")
+    L1 = color1.lab_l
+    a1 = color1.lab_a
+    b1 = color1.lab_b
+    L2 = color2.lab_l
+    a2 = color2.lab_a
+    b2 = color2.lab_b
 
-    best_color = None
-    best_distance = float("inf")
+    # Step 1: Chroma
+    C1 = math.sqrt(a1**2 + b1**2)
+    C2 = math.sqrt(a2**2 + b2**2)
+    C_bar = (C1 + C2) / 2
 
-    # for color in colors:
-    #     c = Color(f"srgb({color[0]}, {color[1]}, {color[2]})").convert("lab")
-    #     d = tgt.delta_e(c)  # perceptual distance
-    #     if d < best_distance:
-    #         best_distance = d
-    #         best_color = color
+    # Step 2: G factor
+    C_bar7 = C_bar**7
+    G = 0.5 * (1 - math.sqrt(C_bar7 / (C_bar7 + 25**7)))
 
-    return best_color
+    # Step 3: Adjusted a values
+    a1_prime = (1 + G) * a1
+    a2_prime = (1 + G) * a2
+
+    # Step 4: Adjusted chroma
+    C1_prime = math.sqrt(a1_prime**2 + b1**2)
+    C2_prime = math.sqrt(a2_prime**2 + b2**2)
+    C_bar_prime = (C1_prime + C2_prime) / 2
+
+    # Step 5: Hue angles (degrees)
+    def hue_angle(a, b):
+        angle = math.degrees(math.atan2(b, a))
+        return angle if angle >= 0 else angle + 360
+
+    h1_prime = hue_angle(a1_prime, b1)
+    h2_prime = hue_angle(a2_prime, b2)
+
+    # Step 6: Differences
+    delta_L_prime = L2 - L1
+    delta_C_prime = C2_prime - C1_prime
+
+    if C1_prime * C2_prime == 0:
+        delta_h_prime = 0
+    else:
+        dh = h2_prime - h1_prime
+        if abs(dh) <= 180:
+            delta_h_prime = dh
+        elif dh > 180:
+            delta_h_prime = dh - 360
+        else:
+            delta_h_prime = dh + 360
+
+    delta_H_prime = 2 * math.sqrt(C1_prime * C2_prime) * math.sin(
+        math.radians(delta_h_prime / 2)
+    )
+
+    # Step 7: Averages
+    L_bar_prime = (L1 + L2) / 2
+
+    if C1_prime * C2_prime == 0:
+        h_bar_prime = h1_prime + h2_prime
+    else:
+        if abs(h1_prime - h2_prime) <= 180:
+            h_bar_prime = (h1_prime + h2_prime) / 2
+        else:
+            h_bar_prime = (h1_prime + h2_prime + 360) / 2
+
+    # Step 8: Weighting functions
+    S_L = 1 + (0.015 * (L_bar_prime - 50)**2) / math.sqrt(
+        20 + (L_bar_prime - 50)**2
+    )
+
+    S_C = 1 + 0.045 * C_bar_prime
+
+    T = (
+        1
+        - 0.17 * math.cos(math.radians(h_bar_prime - 30))
+        + 0.24 * math.cos(math.radians(2 * h_bar_prime))
+        + 0.32 * math.cos(math.radians(3 * h_bar_prime + 6))
+        - 0.20 * math.cos(math.radians(4 * h_bar_prime - 63))
+    )
+
+    S_H = 1 + 0.015 * C_bar_prime * T
+
+    # Step 9: Rotation term
+    delta_theta = 30 * math.exp(-((h_bar_prime - 275) / 25)**2)
+    R_C = 2 * math.sqrt(C_bar_prime**7 / (C_bar_prime**7 + 25**7))
+    R_T = -R_C * math.sin(math.radians(2 * delta_theta))
+
+    # Step 10: Final ΔE00
+    delta_E = math.sqrt(
+        (delta_L_prime / S_L)**2
+        + (delta_C_prime / S_C)**2
+        + (delta_H_prime / S_H)**2
+        + R_T * (delta_C_prime / S_C) * (delta_H_prime / S_H)
+    )
+
+    return delta_E
+
+
+def compare_colors(img_colors, dmc_colors):
+    # Create dataframe
+    column_names = ["Original RGB", "Stitch Count", "Color Match RGB", "FLoss Number", "Floss Name"]
+    df = pd.DataFrame(columns=column_names)
+
+    # Find color matches
+    for key, value in img_colors.items():
+        if key[3] > 0 and key[0] > 0:
+            rgb = [key[0], key[1], key[2]]
+            best_match = closest_color(rgb, dmc_colors)
+            print(key, ".....", best_match)
+            new_row = {"Original RGBA": key,
+                        "Stitch Count": value,
+                         "Color Match RGB": best_match,
+                         "DMC Number": "",
+                         "Floss Name": ""}
+
 
 
 
 # ------------------------- Main Code -------------------------
-# crop_transparent_border(r"Sample_Images\mudkip.png", r"Sample_Images\mudkip_crop.png")
-# polars_dataframe = get_RGB_list(r"Sample_Images\mudkip_crop.png")
-get_RGBA_list(r"Sample_Images\mudkip_crop.png")
+# output_path = crop_transparent_border(r"Sample_Images\mudkip.png")
+output_path = r"Sample_Images\mudkip_crop.png"
+img_color_dict = get_RGBA_list(output_path)
+dmc_colors_list, dmc_colors_dict = prep_dmc_color_lst()
+# compare_colors(img_color_dict, dmc_colors_list)
 
 
-# dmc_colors = prep_dmc_color_lst()
-# for entry in polars_dataframe.iter_rows():
-#     print(entry)
-#     color = entry[0]
-#     best_match = closest_color_coloraide(color, dmc_colors)
-#     break
