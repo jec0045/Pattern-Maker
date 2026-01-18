@@ -7,6 +7,7 @@ from colormath.color_conversions import convert_color
 from collections import Counter
 import math
 
+
 def crop_transparent_border(image_path):
     image = Image.open(image_path)  # Open the image
     bbox = image.getbbox()  # Get the bounding box of non-transparent pixels
@@ -45,8 +46,9 @@ def prep_dmc_color_lst():
     # Combine the "R", "G", and "B" columns into one column as a list
 
     color_df = dmc_colors.to_pandas()  # Format as a pandas dataframe
+    color_df['Floss'] = color_df['Floss'].astype(str).str.zfill(4)
 
-    return  color_df
+    return color_df
 
 
 def rgb_to_lab(rgb):
@@ -231,3 +233,38 @@ def compare_colors(img_colors, dmc_df):
             ]
 
     return df
+
+
+def recolor_image(image_path, pandas_colors):
+    # Load and convert image to RGBA
+    img = Image.open(image_path).convert('RGBA')
+    data = np.array(img)
+    color_map = {}
+ 
+    for row in pandas_colors.iterrows():
+        # Get Original and New Color
+        original = row[1]["Original RGBA"].split()
+        # print("OG :", type(original), "...", original)
+        new = (row[1]["Color Match RGB"].replace(",", "").replace("[", "")
+               .replace("]", "").split())
+        new.extend(['255'])
+        # print("NEW:", type(new), "...", new)
+
+        # Convert Colors from Str to Int
+        original_int = tuple(list(map(int, original)))
+        new_int = tuple(list(map(int, new)))
+
+        # Define color mappings: old_color -> new_color
+        color_map[original_int] = new_int
+
+
+    # Replace each color in the map
+    for old_color, new_color in color_map.items():
+        # Create mask for pixels matching the old color
+        mask = np.all(data == old_color, axis=-1)
+        data[mask] = new_color
+
+    # Convert back to PIL Image and save
+    output_path = image_path.replace("crop.png", "recolor.png")
+    result_img = Image.fromarray(data)
+    result_img.save(output_path)
