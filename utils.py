@@ -1,4 +1,4 @@
-from PIL import Image
+from PIL import Image, ImageDraw
 import numpy as np
 import polars as pl
 import pandas as pd
@@ -75,11 +75,14 @@ def closest_color(target, colors):
 
     for color in colors:
         c = rgb_to_lab([color[0], color[1], color[2]])
+        d = gpt_delta_e_ciede2000(tgt, c)  # perceptual distance
 
-        d = gpt_delta_e_ciede2000(tgt, c) # perceptual distance
         if d < best_distance:
             best_distance = d
             best_color = color
+            print(f"NEW BEST: {color} \t {d}")
+        else:
+            print("         ", color, "   \t", d)
 
     return best_color
 
@@ -268,3 +271,65 @@ def recolor_image(image_path, pandas_colors):
     output_path = image_path.replace("crop.png", "recolor.png")
     result_img = Image.fromarray(data)
     result_img.save(output_path)
+
+    return output_path
+
+
+def add_grid(image_path):
+    # Refrence: https://randomgeekery.org/post/2017/11/drawing-grids-with-python-and-pillow/
+
+    # Rescale Image
+    img = Image.open(image_path)
+
+    # Scale up using nearest-neighbor (e.g., 2x)
+    scale = 20
+    scaled_img = img.resize((img.width * scale, img.height * scale), Image.Resampling.NEAREST)
+
+    # image = Image.new(mode='L', size=(height, width), color=255)
+    image = scaled_img
+
+    # Draw some lines (vertical)
+    draw = ImageDraw.Draw(image)
+    y_start = 0
+    y_end = image.height
+    step_size = scale
+
+    for x in range(0, image.width, step_size):
+        line = ((x, y_start), (x, y_end))
+        draw.line(line, fill="grey")
+
+    # Draw some lines (horizontal)
+    x_start = 0
+    x_end = image.width
+
+    for y in range(0, image.height, step_size):
+        line = ((x_start, y), (x_end, y))
+        draw.line(line, fill="grey")
+
+    # Draw Box around entrie image
+
+    # Define the coordinates for the bounding box: (left, upper, right, lower)
+    # For the whole image, this is (0, 0, width, height)
+    # To ensure the border is inside the image bounds, you can use (0, 0, width-1, height-1)
+    bbox_coordinates = (0, 0, image.width - 1, image.height - 1)
+
+    # Draw the rectangle
+    # Specify the outline color (e.g., "red") and line width (e.g., 5 pixels)
+    draw.rectangle(bbox_coordinates, outline="grey")
+
+    # Draw a vertical line in the middle of the image
+    x = image.width / 2
+    y_start = 0
+    y_end = image.height
+    line = ((x, y_start), (x, y_end))
+    draw.line(line, fill="red", width=3)
+
+    # Draw a horizontal line in the middle of the image
+    x_start = 0
+    y = image.height / 2
+    x_end = image.width
+    line = ((x_start, y), (x_end, y))
+    draw.line(line, fill="red", width=3)
+    del draw
+
+    image.save(r"Sample_Images\grid_test.png")
