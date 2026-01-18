@@ -1,3 +1,6 @@
 streamlit
 polars
 Pillow
+numpy
+colormath
+coloraide
