@@ -4,6 +4,7 @@ import polars as pl
 import pandas as pd
 from colormath.color_objects import sRGBColor, LabColor
 from colormath.color_conversions import convert_color
+from colorspacious import cspace_convert
 from collections import Counter
 import math
 
@@ -56,9 +57,16 @@ def rgb_to_lab(rgb):
     # return [lab.lab_l, lab.lab_a, lab.lab_b]
     # return convert_color(sRGBColor(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255), LabColor)
 
-    # normalize to 0–1
-    srgb = sRGBColor(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255)
-    lab = convert_color(srgb, LabColor)
+    # # normalize to 0–1
+    # srgb = sRGBColor(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255)
+    # lab = convert_color(srgb, LabColor)
+
+    srgb = sRGBColor(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255, is_upscaled=False)
+    lab = convert_color(
+        srgb,
+        LabColor,
+        target_illuminant="d65"
+    )
 
     # ensure pure Python floats
     lab.lab_l = float(lab.lab_l)
@@ -68,21 +76,21 @@ def rgb_to_lab(rgb):
 
 
 def closest_color(target, colors):
-    tgt = rgb_to_lab([target[0], target[1], target[2]])
+    # tgt = rgb_to_lab([target[0], target[1], target[2]])
 
     best_color = None
     best_distance = float("inf")
 
     for color in colors:
-        c = rgb_to_lab([color[0], color[1], color[2]])
-        d = gpt_delta_e_ciede2000(tgt, c)  # perceptual distance
+        # c = rgb_to_lab([color[0], color[1], color[2]])
+        d = cam02_ucs_distance(target, color)  # perceptual distance
 
         if d < best_distance:
             best_distance = d
             best_color = color
-            print(f"NEW BEST: {color} \t {d}")
-        else:
-            print("         ", color, "   \t", d)
+            # print(f"NEW BEST: {color} \t {d}")
+        # else:
+        #     print("         ", color, "   \t", d)
 
     return best_color
 
@@ -155,7 +163,11 @@ def gpt_delta_e_ciede2000(color1, color2):
         if abs(h1_prime - h2_prime) <= 180:
             h_bar_prime = (h1_prime + h2_prime) / 2
         else:
-            h_bar_prime = (h1_prime + h2_prime + 360) / 2
+            if (h1_prime + h2_prime) < 360:
+                h_bar_prime = (h1_prime + h2_prime + 360) / 2
+            else:
+                h_bar_prime = (h1_prime + h2_prime - 360) / 2
+
 
     # Step 8: Weighting functions
     S_L = 1 + (0.015 * (L_bar_prime - 50)**2) / math.sqrt(
@@ -188,6 +200,23 @@ def gpt_delta_e_ciede2000(color1, color2):
     )
 
     return delta_E
+
+
+def cam02_ucs_distance(rgb1, rgb2):
+    """
+    Perceptual distance using CAM02-UCS (J′a′b′).
+    rgb1, rgb2: [R, G, B] in 0–255
+    Returns: Euclidean distance in CAM02-UCS
+    """
+
+    # normalize to 0–1
+    rgb1 = np.array(rgb1) / 255.0
+    rgb2 = np.array(rgb2) / 255.0
+
+    cam1 = cspace_convert(rgb1, "sRGB1", "CAM02-UCS")
+    cam2 = cspace_convert(rgb2, "sRGB1", "CAM02-UCS")
+
+    return np.linalg.norm(cam1 - cam2)
 
 
 def compare_colors(img_colors, dmc_df):
@@ -273,6 +302,34 @@ def recolor_image(image_path, pandas_colors):
     result_img.save(output_path)
 
     return output_path
+
+
+def create_side_by_side(img1_path, img2_path):
+    """
+    Combines two images side-by-side using the Pillow library.
+    """
+    # Open the images
+    img1 = Image.open(img1_path).convert("RGBA")
+    img2 = Image.open(img2_path).convert("RGBA")
+
+    # Calculate the total width of the new image
+    total_width = img1.width + img2.width
+    total_height = img1.height # Both heights are now the same
+
+    # Create a new transparent image with the combined width and consistent height
+    # Mode "RGBA" is crucial for transparency, and color (0,0,0,0) makes it fully transparent
+    combined_img = Image.new('RGBA', (total_width, total_height), (0, 0, 0, 0))
+
+    # Paste the first image onto the new image at coordinates (0, 0)
+    combined_img.paste(img1, (0, 0), mask=img1) # Use mask to maintain transparency
+
+    # Paste the second image next to the first one, starting at the first image's width
+    combined_img.paste(img2, (img1.width, 0), mask=img2) # Use mask to maintain transparency
+
+    # Save the result
+    output_path = img1_path.replace("_crop.png", "_side_by_side.png")
+    combined_img.save(output_path)
+    print(f"Images combined and saved to {output_path}")
 
 
 def add_grid(image_path):

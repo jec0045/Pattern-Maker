@@ -3,5 +3,6 @@ polars
 pandas
 Pillow
 numpy
-colormath
+colormath>=3.0
 coloraide
+colorspacious
