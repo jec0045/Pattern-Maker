@@ -8,6 +8,9 @@ from colorspacious import cspace_convert
 from collections import Counter
 import math
 
+# Constants
+SCALE = 64
+
 
 def crop_transparent_border(image_path):
     image = Image.open(image_path)  # Open the image
@@ -335,58 +338,95 @@ def create_side_by_side(img1_path, img2_path):
 def add_grid(image_path):
     # Refrence: https://randomgeekery.org/post/2017/11/drawing-grids-with-python-and-pillow/
 
-    # Rescale Image
-    img = Image.open(image_path)
+    # Open Image
+    img = Image.open(image_path).convert("RGBA")
+
+    # Create a temp background for testing
+    temp_bckgnd_color = (245, 242, 208)
+    background = Image.new("RGBA", img.size, temp_bckgnd_color)
+    background.paste(img, (0, 0), img)
+    img = background
 
     # Scale up using nearest-neighbor (e.g., 2x)
-    scale = 20
-    scaled_img = img.resize((img.width * scale, img.height * scale), Image.Resampling.NEAREST)
-
-    # image = Image.new(mode='L', size=(height, width), color=255)
+    scaled_img = img.resize((img.width * SCALE, img.height * SCALE), Image.Resampling.NEAREST)
     image = scaled_img
 
-    # Draw some lines (vertical)
-    draw = ImageDraw.Draw(image)
+    # Image Sizing & Step Size
+    x_start = 0
+    x_end = image.width
     y_start = 0
     y_end = image.height
-    step_size = scale
+    step_size = SCALE
+    box_size = 10
 
+    # Set Colors
+    mionr_line = "grey"
+    major_line = "black"
+
+    # Draw pixel lines (vertical)
+    draw = ImageDraw.Draw(image)
     for x in range(0, image.width, step_size):
         line = ((x, y_start), (x, y_end))
-        draw.line(line, fill="grey")
+        draw.line(line, fill=mionr_line, width=1)
 
-    # Draw some lines (horizontal)
-    x_start = 0
-    x_end = image.width
-
+    # Draw pixel lines (horizontal)
     for y in range(0, image.height, step_size):
         line = ((x_start, y), (x_end, y))
-        draw.line(line, fill="grey")
+        draw.line(line, fill=mionr_line, width=1)
 
     # Draw Box around entrie image
-
-    # Define the coordinates for the bounding box: (left, upper, right, lower)
-    # For the whole image, this is (0, 0, width, height)
-    # To ensure the border is inside the image bounds, you can use (0, 0, width-1, height-1)
     bbox_coordinates = (0, 0, image.width - 1, image.height - 1)
+    draw.rectangle(bbox_coordinates, outline=mionr_line)
 
-    # Draw the rectangle
-    # Specify the outline color (e.g., "red") and line width (e.g., 5 pixels)
-    draw.rectangle(bbox_coordinates, outline="grey")
+    # Draw 10 x 10 Boxes
+    for x in range(0, image.width, step_size*box_size):
+        line = ((x, y_start), (x, y_end))
+        draw.line(line, fill=major_line, width=3)
+    for y in range(0, image.height, step_size*box_size):
+        line = ((x_start, y), (x_end, y))
+        draw.line(line, fill=major_line, width=3)
 
-    # Draw a vertical line in the middle of the image
-    x = image.width / 2
-    y_start = 0
-    y_end = image.height
-    line = ((x, y_start), (x, y_end))
-    draw.line(line, fill="red", width=3)
+    # # Draw a vertical line in the middle of the image
+    # x = image.width / 2
+    # line = ((x, y_start), (x, y_end))
+    # draw.line(line, fill="purple", width=3)
 
-    # Draw a horizontal line in the middle of the image
-    x_start = 0
-    y = image.height / 2
-    x_end = image.width
-    line = ((x_start, y), (x_end, y))
-    draw.line(line, fill="red", width=3)
+    # # Draw a horizontal line in the middle of the image
+    # y = image.height / 2
+    # line = ((x_start, y), (x_end, y))
+    # draw.line(line, fill="purple", width=3)
+
+    # Finish Drawing
     del draw
 
-    image.save(r"Sample_Images\grid_test.png")
+    output_path = image_path.replace("_recolor.png", "_grid.png")
+    image.save(output_path)
+
+    return output_path
+
+
+def add_symbols(base_image_path, grid_image_path):
+
+    # Get the Base Image loaded as a refrence
+    base = Image.open(base_image_path).convert("RGBA")
+    w, h = base.size
+
+    # Open the scalled/recolored/gridded Image
+    scaled = Image.open(grid_image_path).convert("RGBA")
+
+    # Testing
+    target_color = (0, 0, 0, 255)  # Black
+    symbol = Image.open(r"Symbols\white_heart.png").convert("RGBA")
+    symbol = symbol.resize((SCALE, SCALE))
+
+    base_pixels = base.load()
+
+    for y in range(h):
+        for x in range(w):
+            if base_pixels[x, y] == target_color:
+                px = x * SCALE
+                py = y * SCALE
+
+                scaled.paste(symbol, (px, py), symbol)
+
+    scaled.save("test.png")

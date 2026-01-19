@@ -3,7 +3,7 @@
 
 
 from utils import crop_transparent_border, get_RGBA_list, prep_dmc_color_lst, \
-    compare_colors, recolor_image, create_side_by_side, add_grid
+    compare_colors, recolor_image, create_side_by_side, add_grid, add_symbols
 
 
 # ------------------------- Main Code -------------------------
@@ -17,4 +17,8 @@ print(color_chart)
 recolor_path = recolor_image(crop_path, color_chart)
 create_side_by_side(crop_path, recolor_path)
 
-add_grid(recolor_path)
+grid_path = add_grid(recolor_path)
+
+# print(grid_path)
+
+add_symbols(crop_path, grid_path)
