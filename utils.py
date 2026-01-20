@@ -420,6 +420,10 @@ def add_symbols(base_image_path, grid_image_path, color_chart):
     # Symbol List
     symbol_list = get_symbol_list()
 
+    # Handle Pandas Dataframe
+    
+
+
     # Apply Symbols
     for idx, (_, row) in enumerate(color_chart.iterrows()):
         target_color = rgb_to_rgba(row["Color Match RGB"])
