@@ -1,12 +1,14 @@
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageOps
 import numpy as np
 import polars as pl
 import pandas as pd
+import json
 from colormath.color_objects import sRGBColor, LabColor
 from colormath.color_conversions import convert_color
 from colorspacious import cspace_convert
 from collections import Counter
 import math
+import random
 
 # Constants
 SCALE = 64
@@ -405,28 +407,80 @@ def add_grid(image_path):
     return output_path
 
 
-def add_symbols(base_image_path, grid_image_path):
+def add_symbols(base_image_path, grid_image_path, color_chart):
 
     # Get the Base Image loaded as a refrence
     base = Image.open(base_image_path).convert("RGBA")
     w, h = base.size
+    base_pixels = base.load()
 
     # Open the scalled/recolored/gridded Image
     scaled = Image.open(grid_image_path).convert("RGBA")
 
-    # Testing
-    target_color = (0, 0, 0, 255)  # Black
-    symbol = Image.open(r"Symbols\white_heart.png").convert("RGBA")
-    symbol = symbol.resize((SCALE, SCALE))
+    # Symbol List
+    symbol_list = get_symbol_list()
 
-    base_pixels = base.load()
+    # Apply Symbols
+    for idx, (_, row) in enumerate(color_chart.iterrows()):
+        target_color = rgb_to_rgba(row["Color Match RGB"])
+        color_correct = color_correction(target_color)
+        # print(idx, target_color, "Color Correction: ", color_correct)
 
-    for y in range(h):
-        for x in range(w):
-            if base_pixels[x, y] == target_color:
-                px = x * SCALE
-                py = y * SCALE
+        if idx < len(symbol_list):
+            # print(idx, len(symbol_list))
+            symbol = Image.open(symbol_list[idx]).convert("RGBA")
+            symbol = symbol.resize((SCALE, SCALE))
 
-                scaled.paste(symbol, (px, py), symbol)
+            if color_correct:
+                arr = np.array(symbol)
+                arr[..., :3] = 255 - arr[..., :3]
+                symbol = Image.fromarray(arr, "RGBA")
+
+            for y in range(h):
+                for x in range(w):
+                    # if base_pixels[x, y] == target_color:
+                    if base_pixels[x, y][:3] == target_color[:3]:
+                        px = x * SCALE
+                        py = y * SCALE
+
+                        scaled.paste(symbol, (px, py), symbol)
 
     scaled.save("test.png")
+
+
+def get_symbol_list():
+    # Get JSON of avaliable symbols
+    with open(r'Symbols\symbols.json', 'r') as file:
+    # Use json.load() to deserialize the file content into a Python list
+        my_list_str = json.load(file)
+
+    my_list_str = my_list_str.replace('[', '').replace(']', '').replace('"', '')
+    print(my_list_str)
+    my_list = my_list_str.split(', ')
+
+    random.shuffle(my_list)
+
+    return my_list
+
+
+def rgb_to_rgba(color):
+    target_color = (color.replace(",", "").replace("[", "")
+                    .replace("]", "").split())
+    target_color.extend(['255'])
+    int_list = [int(x) for x in target_color]
+    target_tuple = tuple(int_list)
+    return target_tuple
+
+
+def color_correction(color):
+    """
+    Start with all symbols in black, check if the symbol should be changed to white.
+    Return True is the symbol needs to be changed to white, return False if it is good as is.
+    """
+
+    r, g, b = color[:3]
+
+    # Relative luminance (0 = black, 255 = white)
+    luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+    return False if luminance > 127.5 else True

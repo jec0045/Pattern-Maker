@@ -19,6 +19,4 @@ create_side_by_side(crop_path, recolor_path)
 
 grid_path = add_grid(recolor_path)
 
-# print(grid_path)
-
-add_symbols(crop_path, grid_path)
+add_symbols(recolor_path, grid_path, color_chart)
