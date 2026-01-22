@@ -20,10 +20,9 @@ recolor_path = recolor_image(crop_path, color_chart)
 
 grid_path = add_grid(recolor_path)
 
-duplicate_checking(color_chart, crop_path, grid_path)
+# duplicate_checking(color_chart, crop_path, grid_path)
+
+color_key = add_symbols(recolor_path, grid_path, color_chart)
 
 
 
-
-
-# add_symbols(recolor_path, grid_path, color_chart)

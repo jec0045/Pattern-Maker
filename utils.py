@@ -145,8 +145,6 @@ def duplicate_checking(color_chart, original_path, scaled_path):
     scaled.save("test.png")
 
 
-
-
 def recolor_image(image_path, pandas_colors):
     # Load and convert image to RGBA
     img = Image.open(image_path).convert('RGBA')
@@ -258,20 +256,20 @@ def add_grid(image_path):
     # Draw 10 x 10 Boxes
     for x in range(0, image.width, step_size*box_size):
         line = ((x, y_start), (x, y_end))
-        draw.line(line, fill=major_line, width=3)
+        draw.line(line, fill=major_line, width=6)
     for y in range(0, image.height, step_size*box_size):
         line = ((x_start, y), (x_end, y))
-        draw.line(line, fill=major_line, width=3)
+        draw.line(line, fill=major_line, width=6)
 
-    # # Draw a vertical line in the middle of the image
-    # x = image.width / 2
-    # line = ((x, y_start), (x, y_end))
-    # draw.line(line, fill="purple", width=3)
+    # Draw a vertical line in the middle of the image
+    x = image.width / 2
+    line = ((x, y_start), (x, y_end))
+    draw.line(line, fill="purple", width=3)
 
-    # # Draw a horizontal line in the middle of the image
-    # y = image.height / 2
-    # line = ((x_start, y), (x_end, y))
-    # draw.line(line, fill="purple", width=3)
+    # Draw a horizontal line in the middle of the image
+    y = image.height / 2
+    line = ((x_start, y), (x_end, y))
+    draw.line(line, fill="purple", width=3)
 
     # Finish Drawing
     del draw
@@ -295,11 +293,17 @@ def add_symbols(base_image_path, grid_image_path, color_chart):
     # Symbol List
     symbol_list = get_symbol_list()
 
-    # Handle Pandas Dataframe
-    
+    # Handle Pandas Dataframe & Remove Duplicates
+    color_key = color_chart[['DMC Number', 'Floss Name',
+                             'Stitch Count', 'Color Match RGB']]
+    color_key = color_key.groupby("Floss Name", as_index=False).agg({
+        'DMC Number': 'first',
+        'Stitch Count': 'sum',
+        'Color Match RGB': 'first'}).sort_values(by='DMC Number')
+    color_key['Symbol'] = ""
 
     # Apply Symbols
-    for idx, (_, row) in enumerate(color_chart.iterrows()):
+    for idx, (_, row) in enumerate(color_key.iterrows()):
         target_color = rgb_to_rgba(row["Color Match RGB"])
         color_correct = color_correction(target_color)
         # print(idx, target_color, "Color Correction: ", color_correct)
@@ -308,6 +312,7 @@ def add_symbols(base_image_path, grid_image_path, color_chart):
             # print(idx, len(symbol_list))
             symbol = Image.open(symbol_list[idx]).convert("RGBA")
             symbol = symbol.resize((SCALE, SCALE))
+            color_key.loc[idx, 'Symbol'] = symbol_list[idx]
 
             if color_correct:
                 arr = np.array(symbol)
@@ -317,13 +322,14 @@ def add_symbols(base_image_path, grid_image_path, color_chart):
             for y in range(h):
                 for x in range(w):
                     # if base_pixels[x, y] == target_color:
-                    if base_pixels[x, y][:3] == target_color[:3]:
+                    if base_pixels[x, y][:4] == target_color[:4]:
                         px = x * SCALE
                         py = y * SCALE
 
                         scaled.paste(symbol, (px, py), symbol)
 
     scaled.save("test.png")
+    return color_key
 
 
 # -------------------------------------------------------- Supporting Functions
