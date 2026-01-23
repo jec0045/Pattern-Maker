@@ -35,7 +35,8 @@ def get_RGBA_list(image_path):
     img = Image.open(image_path).convert('RGBA')
 
     width, height = img.size  # Extract RGB values for all pixels
-    rgb_values = [img.getpixel((x, y)) for y in range(height) for x in range(width)]
+    rgb_values =[
+        img.getpixel((x, y)) for y in range(height) for x in range(width)]
 
     rgb_counts = Counter(rgb_values)
     rgb_dict = dict(rgb_counts)
@@ -106,6 +107,44 @@ def compare_colors(img_colors, dmc_df):
     return df
 
 
+def recolor_image(image_path, pandas_colors):
+    # Load and convert image to RGBA
+    img = Image.open(image_path).convert('RGBA')
+    data = np.array(img)
+    color_map = {}
+
+    for row in pandas_colors.iterrows():
+        # Get Original and New Color
+        original = row[1]["Original RGBA"].split()
+        # print("OG :", type(original), "...", original)
+        new = (row[1]["Color Match RGB"].replace(",", "").replace("[", "")
+               .replace("]", "").split())
+        new.extend(['255'])
+        # print("NEW:", type(new), "...", new)
+
+        # Convert Colors from Str to Int
+        original_int = tuple(list(map(int, original)))
+        new_int = tuple(list(map(int, new)))
+
+        # Define color mappings: old_color -> new_color
+        color_map[original_int] = new_int
+
+
+    # Replace each color in the map
+    for old_color, new_color in color_map.items():
+        # Create mask for pixels matching the old color
+        mask = np.all(data == old_color, axis=-1)
+        data[mask] = new_color
+
+    # Convert back to PIL Image and save
+    output_path = image_path.replace("crop.png", "recolor.png")
+    result_img = Image.fromarray(data)
+    result_img.save(output_path)
+    print(f"Recolored image saved to {output_path}")
+
+    return output_path
+
+
 def duplicate_checking(color_chart, original_path, scaled_path):
     # Find Color Duplicates
     color_list = color_chart['DMC Number'].tolist()
@@ -142,44 +181,7 @@ def duplicate_checking(color_chart, original_path, scaled_path):
 
                         scaled.paste(symbol, (px, py), symbol)
 
-    scaled.save("test.png")
-
-
-def recolor_image(image_path, pandas_colors):
-    # Load and convert image to RGBA
-    img = Image.open(image_path).convert('RGBA')
-    data = np.array(img)
-    color_map = {}
- 
-    for row in pandas_colors.iterrows():
-        # Get Original and New Color
-        original = row[1]["Original RGBA"].split()
-        # print("OG :", type(original), "...", original)
-        new = (row[1]["Color Match RGB"].replace(",", "").replace("[", "")
-               .replace("]", "").split())
-        new.extend(['255'])
-        # print("NEW:", type(new), "...", new)
-
-        # Convert Colors from Str to Int
-        original_int = tuple(list(map(int, original)))
-        new_int = tuple(list(map(int, new)))
-
-        # Define color mappings: old_color -> new_color
-        color_map[original_int] = new_int
-
-
-    # Replace each color in the map
-    for old_color, new_color in color_map.items():
-        # Create mask for pixels matching the old color
-        mask = np.all(data == old_color, axis=-1)
-        data[mask] = new_color
-
-    # Convert back to PIL Image and save
-    output_path = image_path.replace("crop.png", "recolor.png")
-    result_img = Image.fromarray(data)
-    result_img.save(output_path)
-
-    return output_path
+    scaled.show()
 
 
 def create_side_by_side(img1_path, img2_path):
@@ -217,8 +219,8 @@ def add_grid(image_path):
     img = Image.open(image_path).convert("RGBA")
 
     # Create a temp background for testing
-    # temp_bckgnd_color = (255, 255, 255)  # (245, 242, 208)
-    background = Image.new("RGBA", img.size)  # , temp_bckgnd_color)
+    temp_bckgnd_color = (245, 242, 208)
+    background = Image.new("RGBA", img.size, temp_bckgnd_color)
     background.paste(img, (0, 0), img)
     img = background
 
@@ -276,6 +278,7 @@ def add_grid(image_path):
 
     output_path = image_path.replace("_recolor.png", "_grid.png")
     image.save(output_path)
+    print(f"Gridded image saved to {output_path}")
 
     return output_path
 
@@ -300,6 +303,7 @@ def add_symbols(base_image_path, grid_image_path, color_chart):
         'DMC Number': 'first',
         'Stitch Count': 'sum',
         'Color Match RGB': 'first'}).sort_values(by='DMC Number')
+    color_key = color_key.reset_index(drop=True)
     color_key['Symbol'] = ""
 
     # Apply Symbols
@@ -328,8 +332,10 @@ def add_symbols(base_image_path, grid_image_path, color_chart):
 
                         scaled.paste(symbol, (px, py), symbol)
 
-    output_path = "test.png"
+    output_path = grid_image_path.replace("_grid.png", "_icons.png")
     scaled.save(output_path)
+    print(f"Image w/ symbols/icons saved to {output_path}")
+
     return color_key, output_path
 
 
@@ -368,16 +374,18 @@ def create_color_key(key, image_path):
 
         # Symbols
         symbol_path = key["Symbol"].iloc[index]
-        symbol_scale = SCALE - (margin * 2)
-        symbol = Image.open(symbol_path).convert("RGBA")
-        symbol = symbol.resize((symbol_scale, symbol_scale))
+        # print(color, symbol_path)
+        if symbol_path:
+            symbol_scale = SCALE - (margin * 2)
+            symbol = Image.open(symbol_path).convert("RGBA")
+            symbol = symbol.resize((symbol_scale, symbol_scale))
 
-        if color_correction(color):
-            arr = np.array(symbol)
-            arr[..., :3] = 255 - arr[..., :3]
-            symbol = Image.fromarray(arr, "RGBA")
+            if color_correction(color):
+                arr = np.array(symbol)
+                arr[..., :3] = 255 - arr[..., :3]
+                symbol = Image.fromarray(arr, "RGBA")
 
-        image.paste(symbol, (x_start+margin, y+margin), symbol)
+            image.paste(symbol, (x_start+margin, y+margin), symbol)
 
         # Labels
         dmc_num = key["DMC Number"].iloc[index]
@@ -396,6 +404,8 @@ def create_color_key(key, image_path):
 
     output_path = image_path.replace("_grid.png", "_key.png")
     image.save(output_path)
+    print(f"Cross stitch key saved to {output_path}")
+
     return output_path
 
 
@@ -417,8 +427,11 @@ def combine_image_and_key(key_path, image_path):
     canvas.paste(img, (0, 0), mask=img) # Use mask to maintain transparency
     canvas.paste(key, (img_w, 0), mask=key) # Use mask to maintain transparency
 
-    output_path = "finished.png"
+    output_path = image_path.replace("_icons.png", "_FINAL.png")
     canvas.save(output_path)
+    print(f"Final image saved to {output_path}")
+    canvas.save(output_path)
+
 
 # -------------------------------------------------------- Supporting Functions
 def rgb_to_lab(rgb):
