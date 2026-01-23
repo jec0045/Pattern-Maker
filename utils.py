@@ -1,4 +1,4 @@
-from PIL import Image, ImageDraw, ImageOps
+from PIL import Image, ImageDraw, ImageOps, ImageFont
 import numpy as np
 import polars as pl
 import pandas as pd
@@ -217,8 +217,8 @@ def add_grid(image_path):
     img = Image.open(image_path).convert("RGBA")
 
     # Create a temp background for testing
-    temp_bckgnd_color = (245, 242, 208)
-    background = Image.new("RGBA", img.size, temp_bckgnd_color)
+    # temp_bckgnd_color = (255, 255, 255)  # (245, 242, 208)
+    background = Image.new("RGBA", img.size)  # , temp_bckgnd_color)
     background.paste(img, (0, 0), img)
     img = background
 
@@ -328,9 +328,97 @@ def add_symbols(base_image_path, grid_image_path, color_chart):
 
                         scaled.paste(symbol, (px, py), symbol)
 
-    scaled.save("test.png")
-    return color_key
+    output_path = "test.png"
+    scaled.save(output_path)
+    return color_key, output_path
 
+
+def create_color_key(key, image_path):
+    key = key.sort_values(by='DMC Number').reset_index(drop=True)
+
+    # Create an Image
+    height = len(key) * SCALE
+    width = 900
+    image = Image.new("RGB", size=(width, height), color=(255, 255, 255))
+    draw = ImageDraw.Draw(image)
+
+    # Image Sizing & Step Size
+    x_start = 0
+    x_end = image.width
+    step_size = SCALE
+    margin = 5
+    font_size = SCALE - (4*margin)
+
+    # Cycle Through and Draw Key
+    for y in range(0, image.height, step_size):
+        index = int(y/SCALE)
+
+        # Draw Horizontal Lines
+        line = ((x_start, y), (x_end, y))
+        draw.line(line, fill="black", width=1)
+
+        # Draw a Colored Square
+        color_str = (key["Color Match RGB"].iloc[index].replace('[', '')
+                     .replace(']', '').replace(',', ''))
+        color = tuple(map(int, tuple(color_str.split())))
+
+        square_coords = [(x_start+margin, y+margin),
+                         (x_start+SCALE-margin, y+SCALE-margin)]
+        draw.rectangle(square_coords, fill=color)
+
+        # Symbols
+        symbol_path = key["Symbol"].iloc[index]
+        symbol_scale = SCALE - (margin * 2)
+        symbol = Image.open(symbol_path).convert("RGBA")
+        symbol = symbol.resize((symbol_scale, symbol_scale))
+
+        if color_correction(color):
+            arr = np.array(symbol)
+            arr[..., :3] = 255 - arr[..., :3]
+            symbol = Image.fromarray(arr, "RGBA")
+
+        image.paste(symbol, (x_start+margin, y+margin), symbol)
+
+        # Labels
+        dmc_num = key["DMC Number"].iloc[index]
+        dmc_name = key["Floss Name"].iloc[index]
+
+        try:
+            # Load a TrueType font file and set the size
+            font = ImageFont.truetype("arial.ttf", font_size)
+        except IOError:
+            print("Font file not found, using default font which is not scalable.")
+            font = ImageFont.load_default() 
+
+        text_start = x_start+SCALE+(2*margin)
+        draw.text((text_start, y+margin), f"DMC {dmc_num} - {dmc_name}",
+                  fill="black", font=font)
+
+    output_path = image_path.replace("_grid.png", "_key.png")
+    image.save(output_path)
+    return output_path
+
+
+def combine_image_and_key(key_path, image_path):
+
+    # Get Image Dimensions
+    img = Image.open(image_path).convert("RGBA")
+    img_w, img_h = img.size
+
+    # Get Key Dimensions
+    key = Image.open(key_path).convert("RGBA")
+    key_w, key_h = key.size
+
+    max_h = max(img_h, key_h)
+    sum_w = img_w + key_w
+
+    canvas = Image.new("RGB", size=(sum_w, max_h), color=(255, 255, 255))
+    # canvas = ImageDraw.Draw(image)
+    canvas.paste(img, (0, 0), mask=img) # Use mask to maintain transparency
+    canvas.paste(key, (img_w, 0), mask=key) # Use mask to maintain transparency
+
+    output_path = "finished.png"
+    canvas.save(output_path)
 
 # -------------------------------------------------------- Supporting Functions
 def rgb_to_lab(rgb):
@@ -536,3 +624,4 @@ def color_correction(color):
     luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
 
     return False if luminance > 127.5 else True
+
