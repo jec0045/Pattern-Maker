@@ -162,10 +162,6 @@ def recolor_image(img, pandas_colors):
     return img
 
 
-# //// CAUTION TAPE //// CAUTION TAPE //// CAUTION TAPE //// CAUTION TAPE ////
-# //// CAUTION TAPE //// CAUTION TAPE //// CAUTION TAPE //// CAUTION TAPE ////
-# //// CAUTION TAPE //// CAUTION TAPE //// CAUTION TAPE //// CAUTION TAPE ////
-
 def create_side_by_side(img_path, debug_path,  img1, img2, bckgnd_color):
     """Combines two images side-by-side using the Pillow library."""
 
@@ -185,7 +181,7 @@ def create_side_by_side(img_path, debug_path,  img1, img2, bckgnd_color):
 
     # Save the result
     filename = os.path.basename(img_path)
-    output_path = f"{debug_path}\{filename}".replace(".png", "_side_by_side.png")
+    output_path = f"{debug_path}\\{filename}".replace(".png", "_side_by_side.png")
     combined_img.save(output_path)
     pprint(f"create_side_by_side > Images combined and saved to {output_path}")
 
@@ -344,6 +340,81 @@ def duplicate_checking(color_chart, original_path, scaled_path):
 
     # scaled.show()
 
+# //// CAUTION TAPE //// CAUTION TAPE //// CAUTION TAPE //// CAUTION TAPE ////
+# //// CAUTION TAPE //// CAUTION TAPE //// CAUTION TAPE //// CAUTION TAPE ////
+# //// CAUTION TAPE //// CAUTION TAPE //// CAUTION TAPE //// CAUTION TAPE ////
+
+def add_symbols(base, scaled, color_chart):
+
+    # Get the Base Image as a refrence
+    base_w, base_h = base.size
+    base_pixels = base.load()
+    # print(f"Base Image Size     w: {base_w}  h: {base_h}")
+
+    # Get the Scaled Image as refrence
+    scale_w, scale_h = scaled.size
+    # print(f"Scaled Image Size   w: {scale_w}  h: {scale_h}")
+    # print()
+
+    # Symbol List
+    symbol_list = get_symbol_list()
+    # print(symbol_list)
+    # print()
+
+    # Handle Pandas Dataframe & Remove Duplicates
+    # color_key = color_chart[['DMC Number', 'Floss Name', 'Stitch Count',
+    #                          'Color Match RGB', 'Original RGBA']]
+    # color_key = color_key.groupby("Floss Name", as_index=False).agg({
+    #     'DMC Number': 'first',
+    #     'Stitch Count': 'sum',
+    #     'Color Match RGB': 'first'}).sort_values(by='DMC Number')
+    # color_key = color_key.reset_index(drop=True)
+    # color_key['Symbol'] = ""
+
+    color_chart['Symbol'] = ''
+    print(color_chart)
+    print()
+
+    # Apply Symbols
+    for idx, (_, row) in enumerate(color_chart.iterrows()):
+        target_color = rgb_to_rgba(row["Color Match RGB"])
+        color_correct = color_correction(target_color)
+        print()
+        print("DEBUG:", idx, "\t", target_color, "\tColor Correction: ", color_correct)
+
+        if idx < len(symbol_list):
+            # print(idx, len(symbol_list))
+            symbol = Image.open(symbol_list[idx]).convert("RGBA")
+            symbol = symbol.resize((SCALE, SCALE))
+            color_chart.loc[idx, 'Symbol'] = symbol_list[idx]
+
+            if color_correct:
+                arr = np.array(symbol)
+                arr[..., :3] = 255 - arr[..., :3]
+                symbol = Image.fromarray(arr, "RGBA")
+
+            # print(row['Original RGBA'])
+            # print(type(row['Original RGBA']))
+            # print(tuple(map(int, row['Original RGBA'].split())))
+            
+            # break
+            for y in range(base_w):
+                for x in range(base_h):
+                    if base_pixels[x, y][:4] == (0, 0, 0, 0):
+                        continue
+                    if base_pixels[x, y][:4] == tuple(map(int, row['Original RGBA'].split())):
+                        # print(f"DEBUG: {base_pixels[x, y][:4]}\t{target_color[:4]}\t w: {y} h: {x}")
+                        px = x * SCALE
+                        py = y * SCALE
+
+                        scaled.paste(symbol, (px, py), symbol)
+
+    # scaled.show()
+    return color_chart, scaled
+
+# //// CAUTION TAPE //// CAUTION TAPE //// CAUTION TAPE //// CAUTION TAPE ////
+# //// CAUTION TAPE //// CAUTION TAPE //// CAUTION TAPE //// CAUTION TAPE ////
+# //// CAUTION TAPE //// CAUTION TAPE //// CAUTION TAPE //// CAUTION TAPE ////
 
 # def add_symbols(base, gridded, color_chart):
 
@@ -401,81 +472,14 @@ def duplicate_checking(color_chart, original_path, scaled_path):
 
 
 
-def add_symbols(base, scaled, color_chart):
+# def add_symbols(base, scaled, color_chart):
 
-    # Ensure both images use RGBA
-    base = base.convert("RGBA")
-    scaled = scaled.convert("RGBA")
 
-    # Get Base Image Dimensions
-    w, h = base.size
-    base_pixels = base.load()
 
-    # Verify scaling
-    print("Base dimensions:", base.size)
-    print("Scaled dimensions:", scaled.size)
-    print("Scale factor:", scaled.width / w, scaled.height / h)
 
-    # Symbol List
-    symbol_list = get_symbol_list()
 
-    # Handle Pandas Dataframe & Remove Duplicates
-    color_key = color_chart[
-        ['DMC Number', 'Floss Name', 'Stitch Count', 'Color Match RGB']
-    ]
 
-    color_key = color_key.groupby("Floss Name", as_index=False).agg({
-        'DMC Number': 'first',
-        'Stitch Count': 'sum',
-        'Color Match RGB': 'first'
-    }).sort_values(by='DMC Number')
 
-    color_key = color_key.reset_index(drop=True)
-    color_key['Symbol'] = ""
-
-    # Apply Symbols
-    for idx, (_, row) in enumerate(color_key.iterrows()):
-
-        target_color = rgb_to_rgba(row["Color Match RGB"])
-        color_correct = color_correction(target_color)
-
-        match_count = 0
-
-        if idx < len(symbol_list):
-
-            symbol = Image.open(symbol_list[idx]).convert("RGBA")
-            symbol = symbol.resize((SCALE, SCALE))
-
-            color_key.loc[idx, 'Symbol'] = symbol_list[idx]
-
-            if color_correct:
-                arr = np.array(symbol)
-                arr[..., :3] = 255 - arr[..., :3]
-                symbol = Image.fromarray(arr, "RGBA")
-
-            for y in range(h):
-                for x in range(w):
-
-                    pixel = base_pixels[x, y][:3]
-
-                    if pixel == target_color[:3]:
-
-                        match_count += 1
-
-                        px = x * scale_x
-                        py = y * scale_y
-
-                        scaled.paste(
-                            symbol,
-                            (px, py),
-                            symbol.getchannel("A")
-                        )
-
-            print(f"{row['Floss Name']}: {match_count} matches")
-
-    scaled.show()
-
-    return color_key, scaled
 
 
 def create_color_key(key):
@@ -570,17 +574,13 @@ def create_color_key(key):
 
 def combine_image_and_key(key, img, og_image_path):
 
-    # Ensure both images have RGBA mode
-    img = img.convert("RGBA")
+    # Convert key to RGBA so it's guaranteed to have an alpha channel
     key = key.convert("RGBA")
+    img = img.convert("RGBA")
 
-    # Get Image Dimensions
     # img = Image.open(image_path).convert("RGBA")
-    img_w, img_h = img.size
-
-    # Get Key Dimensions
-    # key = Image.open(key_path).convert("RGBA")
-    key_w, key_h = key.size
+    img_w, img_h = img.size  # Get Image Dimensions
+    key_w, key_h = key.size  # Get Key Dimensions
 
     max_h = max(img_h, key_h)
     sum_w = img_w + key_w

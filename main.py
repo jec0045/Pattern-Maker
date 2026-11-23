@@ -63,17 +63,9 @@ for image in files:
             image, debug_path, resized_image, recolored_image, (0, 0, 0, 0))
             # duplicate_checking(color_chart, original_path, grid_path)
 
-    resized_image.save(".test/resized_image_output.png")
+    recolored_image.save(".test/recolored_image_output.png")
     gridded_img.save(".test/gridded_img_output.png")
 
-
-
-    # color_key, symbol_img = add_symbols(resized_image, gridded_img, color_chart)
-
-    # symbol_img.show()
-
-
-    # print(color_key)
-    # key_path = create_color_key(color_key)
-    # combine_image_and_key(key_path, symbol_img, image)
-
+    color_key, symboled_imgage = add_symbols(recolored_image, gridded_img, color_chart)
+    key_image = create_color_key(color_key)
+    combine_image_and_key(key_image, symboled_imgage, image)

@@ -11,7 +11,7 @@
 1. Resize Canvas to 768
 1. Resize Image to 512
 1. Posterize to one color
-1.  Save image
+1. Save image
 
 
 ## Attribution
