@@ -2,9 +2,13 @@
 # pl.Config.set_tbl_rows(-1)  # Show all rows in any printed polars dataframes
 
 import os
+import shutil
+import tempfile
+from PIL import Image
+from pathlib import Path
 from utils import crop_transparent_border, resize_center_image, get_RGBA_list, \
     compare_colors, duplicate_checking, recolor_image, create_side_by_side, \
-    add_grid, add_symbols, create_color_key, combine_image_and_key
+    add_grid, add_symbols, create_color_key, combine_image_and_key, pprint
 
 
 # os.system('cls' if os.name == 'nt' else 'clear')
@@ -12,36 +16,64 @@ from utils import crop_transparent_border, resize_center_image, get_RGBA_list, \
 # Options
 CROP = True
 RESIZE = True
+IMG_DEBUG = True
 
 # ------------------------- Main Code -------------------------
-base_path = r"C:\Users\jessc\OneDrive\Documents\Patterns"
+base_folder_path = r"C:\Users\jessc\OneDrive\Pictures\Cross Stitch\stardew_sprites"
+files = ['C:\\Users\\jessc\\OneDrive\\Pictures\\Cross Stitch\\stardew_sprites\\sprite_corn_test.png',]
+#  'C:\\Users\\jessc\\OneDrive\\Pictures\\Cross Stitch\\stardew_sprites\\sprite_corn.png',
+#  'C:\\Users\\jessc\\OneDrive\\Pictures\\Cross Stitch\\stardew_sprites\\sprite_hops.png',
+#  'C:\\Users\\jessc\\OneDrive\\Pictures\\Cross Stitch\\stardew_sprites\\sprite_melon.png',
+#  'C:\\Users\\jessc\\OneDrive\\Pictures\\Cross Stitch\\stardew_sprites\\sprite_starfruit.png',
+#  'C:\\Users\\jessc\\OneDrive\\Pictures\\Cross Stitch\\stardew_sprites\\sprite_summer_spangle.png',
+#  'C:\\Users\\jessc\\OneDrive\\Pictures\\Cross Stitch\\stardew_sprites\\sprite_tomato.png',
+#  'C:\\Users\\jessc\\OneDrive\\Pictures\\Cross Stitch\\stardew_sprites\\sprite_wheat.png']
 
-# original_path = f"{base_path}\sunflower\sunflower_36_48.png"
-# original_path = f"{base_path}\mushrooms\mushrooms_64_15.png"
+# Creates 'my_folder' and any missing parent folders safely
+debug_path = f"{base_folder_path}\\debug"
+Path(debug_path).mkdir(parents=True, exist_ok=True)
 
-original_path = r"C:\Users\jessc\OneDrive\Pictures\Cross Stitch\stardew_sprites\sprite_corn.png"
+for image in files:
 
-base_path = original_path.split(".")[0]
+    cropped_image = crop_transparent_border(image, CROP)
 
-working_path = crop_transparent_border(original_path, base_path, CROP)
-working_path = resize_center_image(working_path, base_path, RESIZE)
+    # pprint(f"DEBUG: {type(cropped_image)}")
+    # pprint(f"DEBUG: {cropped_image}")
 
-img_color_dict = get_RGBA_list(working_path)
-# for color, count in img_color_dict.items():
-#     print(count, "\t", color)
+    resized_image = resize_center_image(cropped_image, RESIZE)
 
-color_chart = compare_colors(img_color_dict)
-print(color_chart)
+    # pprint(f"DEBUG: {type(resized_image)}")
+    # pprint(f"DEBUG: {resized_image}")
 
-working_path = recolor_image(working_path, base_path, color_chart)
+    img_color_dict = get_RGBA_list(resized_image)
+    # for color, count in img_color_dict.items(): print(count, "\t", color)
 
-# create_side_by_side(original_path, working_path, (0, 0, 0, 0))
+    color_chart = compare_colors(img_color_dict)
+    print(color_chart)
 
-grid_path = add_grid(working_path, base_path)
+    recolored_image = recolor_image(resized_image, color_chart)
 
-duplicate_checking(color_chart, original_path, grid_path)
-color_key, symbol_path = add_symbols(working_path, grid_path, color_chart)
+    # pprint(f"DEBUG: {type(recolored_image)}")
+    # pprint(f"DEBUG: {recolored_image}")
 
-print(color_key)
-key_path = create_color_key(color_key, grid_path)
-combine_image_and_key(key_path, symbol_path)
+    gridded_img = add_grid(recolored_image)
+
+    if IMG_DEBUG:
+        create_side_by_side(
+            image, debug_path, resized_image, recolored_image, (0, 0, 0, 0))
+            # duplicate_checking(color_chart, original_path, grid_path)
+
+    resized_image.save(".test/resized_image_output.png")
+    gridded_img.save(".test/gridded_img_output.png")
+
+
+
+    # color_key, symbol_img = add_symbols(resized_image, gridded_img, color_chart)
+
+    # symbol_img.show()
+
+
+    # print(color_key)
+    # key_path = create_color_key(color_key)
+    # combine_image_and_key(key_path, symbol_img, image)
+

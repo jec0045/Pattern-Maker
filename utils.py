@@ -1,8 +1,10 @@
 from PIL import Image, ImageDraw, ImageOps, ImageFont
+import tempfile
 import numpy as np
 import polars as pl
 import pandas as pd
 import json
+import os
 from colormath.color_objects import sRGBColor, LabColor
 from colormath.color_conversions import convert_color
 from colorspacious import cspace_convert
@@ -17,69 +19,65 @@ GRID_SIZE = 10
 
 
 # -------------------------------------------------------------- Called By Main
-def crop_transparent_border(image_path, base_path, crop_option):
-    """Crop any excess transparent boarders around the image"""
+def crop_transparent_border(image_path, crop_option):
+    """Crop excess transparent borders and return the cropped image."""
 
-    output_path = image_path  # Default the output to the original image
-    if crop_option:  # User wants to crop excess transparent boarders around image
-        image = Image.open(image_path)  # Open the image
-        bbox = image.getbbox()  # Get the bounding box of non-transparent pixels
+    image = Image.open(image_path).convert("RGBA")
+
+    if crop_option:
+        alpha = image.getchannel("A")  # Extract alpha channel
+        bbox = alpha.getbbox()  # Find bounding box of non-transparent pixels
 
         if bbox:
-            output_path = base_path + "_crop.png"
-            cropped_image = image.crop(bbox)  # Crop the image to the bounding box
-            cropped_image.save(output_path)  # Save the cropped image
-            pprint(f"crop_transparent_border > Cropped image saved to {output_path}")
+            cropped_image = image.crop(bbox)
+            pprint("crop_transparent_border > Image has been cropped")
+            return cropped_image
 
         else:
-            pprint("crop_transparent_border > No non-transparent content found in the image.")
-
-    else:  # If user does not want the image cropped
-        pprint("crop_transparent_border > User has disabled this feature.")
-
-    return output_path
-
-
-def resize_center_image(image_path, base_path, resize_option):
-
-    if resize_option:
-        with Image.open(image_path).convert("RGBA") as img:
-            width, height = img.size
-
-            new_width = math.ceil(width / GRID_SIZE) * GRID_SIZE
-            new_height = math.ceil(height / GRID_SIZE) * GRID_SIZE
-
-            # Calculate equal padding on each side
-            x = math.floor(((new_width - width) / 2))
-            y = math.floor(((new_height - height) / 2))
-
-            # Transparent canvas
-            canvas = Image.new("RGBA", (new_width, new_height), (0, 0, 0, 0))
-
-            # Paste original image in center
-            canvas.alpha_composite(img, (x, y))
-
-            # Save as PNG
-            output_path = base_path + "_resize.png"
-            canvas.save(output_path)
-
-            pprint("resize_center_image > Padding has been added to image")
+            pprint("crop_transparent_border > No non-transparent content found.")
+            return image
 
     else:
-        output_path = image_path
+        pprint("crop_transparent_border > User has disabled this feature.")
+        return image
+
+
+def resize_center_image(image, resize_option):
+
+    if resize_option:
+        width, height = image.size
+
+        new_width = math.ceil(width / GRID_SIZE) * GRID_SIZE
+        new_height = math.ceil(height / GRID_SIZE) * GRID_SIZE
+
+        # Calculate equal padding on each side
+        x = math.floor(((new_width - width) / 2))
+        y = math.floor(((new_height - height) / 2))
+
+        # Transparent canvas
+        canvas = Image.new("RGBA", (new_width, new_height), (0, 0, 0, 0))
+
+        # Paste original image in center
+        canvas.alpha_composite(image, (x, y))
+
+        # # Save as PNG
+        # output_path = base_path + "_resize.png"
+        # canvas.save(output_path)
+
+        pprint("resize_center_image > Padding has been added to image")
+        return canvas
+
+    else:
         pprint("resize_center_image > No padding has been added to image")
+        return image
 
-    return output_path
 
-
-def get_RGBA_list(image_path):
+def get_RGBA_list(image):
     """Create a dict that contains the RBG values and number of occurances"""
 
-    img = Image.open(image_path).convert('RGBA')
-
-    width, height = img.size  # Extract RGB values for all pixels
+    width, height = image.size  # Extract RGB values for all pixels
     rgb_values =[
-        img.getpixel((x, y)) for y in range(height) for x in range(width)]
+        image.getpixel((x, y)) for y in range(height) for x in range(width)]
 
     rgb_counts = Counter(rgb_values)
     rgb_dict = dict(rgb_counts)
@@ -127,15 +125,14 @@ def compare_colors(img_colors):
             color_chart_df.loc[len(color_chart_df)] = [  # Update Color Chart
                 original_rgba, value, formatted_match, dmc_num, dmc_name]
 
-    # pprint(f"compare_colors > one to one color chart\n{color_chart_df}")
+    pprint(f"compare_colors > one to one color chart")
 
     return color_chart_df
 
 
-def recolor_image(image_path, base_path, pandas_colors):
+def recolor_image(img, pandas_colors):
 
     # Load and convert image to RGBA
-    img = Image.open(image_path).convert('RGBA')
     data = np.array(img)
     color_map = {}
 
@@ -161,21 +158,16 @@ def recolor_image(image_path, base_path, pandas_colors):
         mask = np.all(data == old_color, axis=-1)
         data[mask] = new_color
 
-    # Convert back to PIL Image and save
-    output_path = base_path + "_recolor.png"
-    result_img = Image.fromarray(data)
-    result_img.save(output_path)
-    pprint(f"recolor_image > Recolored image saved to {output_path}")
-
-    return output_path
+    pprint("recolor_image > Recolored image complete")
+    return img
 
 
-def create_side_by_side(img1_path, img2_path, bckgnd_color):
+# //// CAUTION TAPE //// CAUTION TAPE //// CAUTION TAPE //// CAUTION TAPE ////
+# //// CAUTION TAPE //// CAUTION TAPE //// CAUTION TAPE //// CAUTION TAPE ////
+# //// CAUTION TAPE //// CAUTION TAPE //// CAUTION TAPE //// CAUTION TAPE ////
+
+def create_side_by_side(img_path, debug_path,  img1, img2, bckgnd_color):
     """Combines two images side-by-side using the Pillow library."""
-
-    # Open the images
-    img1 = Image.open(img1_path).convert("RGBA")
-    img2 = Image.open(img2_path).convert("RGBA")
 
     # Calculate the total width of the new image
     total_width = img1.width + img2.width
@@ -192,16 +184,14 @@ def create_side_by_side(img1_path, img2_path, bckgnd_color):
     combined_img.paste(img2, (img1.width, 0), mask=img2)  # Use mask to maintain transparency
 
     # Save the result
-    output_path = img1_path.replace("_crop.png", "_side_by_side.png")
+    filename = os.path.basename(img_path)
+    output_path = f"{debug_path}\{filename}".replace(".png", "_side_by_side.png")
     combined_img.save(output_path)
     pprint(f"create_side_by_side > Images combined and saved to {output_path}")
 
 
-def add_grid(image_path, base_path):
+def add_grid(img):
     # Refrence: https://randomgeekery.org/post/2017/11/drawing-grids-with-python-and-pillow/
-
-    # Open Image
-    img = Image.open(image_path).convert("RGBA")
 
     # Create a temp background for testing
     # temp_bckgnd_color = (245, 242, 208)
@@ -294,11 +284,9 @@ def add_grid(image_path, base_path):
     # Finish Drawing
     del draw
 
-    output_path = base_path +"_grid.png"
-    image.save(output_path)
-    print(f"add_grid > Gridded image saved to {output_path}")
+    pprint(f"add_grid > Complete")
 
-    return output_path
+    return image
 
 
 def duplicate_checking(color_chart, original_path, scaled_path):
@@ -357,39 +345,107 @@ def duplicate_checking(color_chart, original_path, scaled_path):
     # scaled.show()
 
 
-def add_symbols(base_image_path, grid_image_path, color_chart):
+# def add_symbols(base, gridded, color_chart):
 
-    # Get the Base Image loaded as a refrence
-    base = Image.open(base_image_path).convert("RGBA")
+#     # Get the Base Image loaded as a refrence
+#     # base = Image.open(base_image_path).convert("RGBA")
+#     w, h = base.size
+#     base_pixels = base.load()
+
+#     # Open the scalled/recolored/gridded Image
+#     # gridded = Image.open(grid_image_path).convert("RGBA")
+
+#     # Symbol List
+#     symbol_list = get_symbol_list()
+
+#     # Handle Pandas Dataframe & Remove Duplicates
+#     color_key = color_chart[['DMC Number', 'Floss Name',
+#                              'Stitch Count', 'Color Match RGB']]
+#     color_key = color_key.groupby("Floss Name", as_index=False).agg({
+#         'DMC Number': 'first',
+#         'Stitch Count': 'sum',
+#         'Color Match RGB': 'first'}).sort_values(by='DMC Number')
+#     color_key = color_key.reset_index(drop=True)
+#     color_key['Symbol'] = ""
+
+#     # Apply Symbols
+#     for idx, (_, row) in enumerate(color_key.iterrows()):
+#         target_color = rgb_to_rgba(row["Color Match RGB"])
+#         color_correct = color_correction(target_color)
+#         # print(idx, target_color, "Color Correction: ", color_correct)
+
+#         if idx < len(symbol_list):
+#             # print(idx, len(symbol_list))
+#             symbol = Image.open(symbol_list[idx]).convert("RGBA")
+#             symbol = symbol.resize((SCALE, SCALE))
+#             color_key.loc[idx, 'Symbol'] = symbol_list[idx]
+
+#             if color_correct:
+#                 arr = np.array(symbol)
+#                 arr[..., :3] = 255 - arr[..., :3]
+#                 symbol = Image.fromarray(arr, "RGBA")
+
+#             for y in range(h):
+#                 for x in range(w):
+#                     # if base_pixels[x, y] == target_color:
+#                     if base_pixels[x, y][:4] == target_color[:4]:
+#                         px = x * SCALE
+#                         py = y * SCALE
+
+#                         gridded.paste(symbol, (px, py), symbol)
+
+#     gridded.show()
+
+#     return color_key, gridded
+
+
+
+
+def add_symbols(base, scaled, color_chart):
+
+    # Ensure both images use RGBA
+    base = base.convert("RGBA")
+    scaled = scaled.convert("RGBA")
+
+    # Get Base Image Dimensions
     w, h = base.size
     base_pixels = base.load()
 
-    # Open the scalled/recolored/gridded Image
-    scaled = Image.open(grid_image_path).convert("RGBA")
+    # Verify scaling
+    print("Base dimensions:", base.size)
+    print("Scaled dimensions:", scaled.size)
+    print("Scale factor:", scaled.width / w, scaled.height / h)
 
     # Symbol List
     symbol_list = get_symbol_list()
 
     # Handle Pandas Dataframe & Remove Duplicates
-    color_key = color_chart[['DMC Number', 'Floss Name',
-                             'Stitch Count', 'Color Match RGB']]
+    color_key = color_chart[
+        ['DMC Number', 'Floss Name', 'Stitch Count', 'Color Match RGB']
+    ]
+
     color_key = color_key.groupby("Floss Name", as_index=False).agg({
         'DMC Number': 'first',
         'Stitch Count': 'sum',
-        'Color Match RGB': 'first'}).sort_values(by='DMC Number')
+        'Color Match RGB': 'first'
+    }).sort_values(by='DMC Number')
+
     color_key = color_key.reset_index(drop=True)
     color_key['Symbol'] = ""
 
     # Apply Symbols
     for idx, (_, row) in enumerate(color_key.iterrows()):
+
         target_color = rgb_to_rgba(row["Color Match RGB"])
         color_correct = color_correction(target_color)
-        # print(idx, target_color, "Color Correction: ", color_correct)
+
+        match_count = 0
 
         if idx < len(symbol_list):
-            # print(idx, len(symbol_list))
+
             symbol = Image.open(symbol_list[idx]).convert("RGBA")
             symbol = symbol.resize((SCALE, SCALE))
+
             color_key.loc[idx, 'Symbol'] = symbol_list[idx]
 
             if color_correct:
@@ -399,21 +455,30 @@ def add_symbols(base_image_path, grid_image_path, color_chart):
 
             for y in range(h):
                 for x in range(w):
-                    # if base_pixels[x, y] == target_color:
-                    if base_pixels[x, y][:4] == target_color[:4]:
-                        px = x * SCALE
-                        py = y * SCALE
 
-                        scaled.paste(symbol, (px, py), symbol)
+                    pixel = base_pixels[x, y][:3]
 
-    output_path = grid_image_path.replace("_grid.png", "_icons.png")
-    scaled.save(output_path)
-    print(f"Image w/ symbols/icons saved to {output_path}")
+                    if pixel == target_color[:3]:
 
-    return color_key, output_path
+                        match_count += 1
+
+                        px = x * scale_x
+                        py = y * scale_y
+
+                        scaled.paste(
+                            symbol,
+                            (px, py),
+                            symbol.getchannel("A")
+                        )
+
+            print(f"{row['Floss Name']}: {match_count} matches")
+
+    scaled.show()
+
+    return color_key, scaled
 
 
-def create_color_key(key, image_path):
+def create_color_key(key):
     key = key.sort_values(by='DMC Number').reset_index(drop=True)
 
     # Create an Image
@@ -476,11 +541,7 @@ def create_color_key(key, image_path):
         draw.text((text_start, y+margin), f"DMC {dmc_num} - {dmc_name}",
                   fill="black", font=font)
 
-    output_path = image_path.replace("_grid.png", "_key.png")
-    image.save(output_path)
-    print(f"Cross stitch key saved to {output_path}")
-
-    return output_path
+    return image
 
 
 # def combine_image_and_key(key_path, image_path):
@@ -507,14 +568,18 @@ def create_color_key(key, image_path):
 #     canvas.save(output_path)
 
 
-def combine_image_and_key(key_path, image_path):
+def combine_image_and_key(key, img, og_image_path):
+
+    # Ensure both images have RGBA mode
+    img = img.convert("RGBA")
+    key = key.convert("RGBA")
 
     # Get Image Dimensions
-    img = Image.open(image_path).convert("RGBA")
+    # img = Image.open(image_path).convert("RGBA")
     img_w, img_h = img.size
 
     # Get Key Dimensions
-    key = Image.open(key_path).convert("RGBA")
+    # key = Image.open(key_path).convert("RGBA")
     key_w, key_h = key.size
 
     max_h = max(img_h, key_h)
@@ -526,10 +591,10 @@ def combine_image_and_key(key_path, image_path):
     img_y = (max_h - img_h) // 2
     key_y = (max_h - key_h) // 2
 
-    canvas.paste(img, (0, img_y), mask=img)
-    canvas.paste(key, (img_w, key_y), mask=key)
+    canvas.paste(img, (0, img_y), mask=img.getchannel("A"))
+    canvas.paste(key, (img_w, key_y), mask=key.getchannel("A"))
 
-    output_path = image_path.replace("_icons.png", "_FINAL.png")
+    output_path = og_image_path.replace(".png", "_FINAL.png")
     canvas.save(output_path)
 
     print(f"Final image saved to {output_path}")
