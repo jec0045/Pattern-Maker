@@ -5,6 +5,7 @@ import polars as pl
 import pandas as pd
 import json
 import os
+from pathlib import Path
 from colormath.color_objects import sRGBColor, LabColor
 from colormath.color_conversions import convert_color
 from colorspacious import cspace_convert
@@ -14,8 +15,30 @@ import random
 
 # Constants
 SCALE = 64
-DEBUG = True
+DEBUG = False
 GRID_SIZE = 10
+
+
+# -------------------------------------------------------------- Process Folder
+def files_and_folder_prep(base_folder_path):
+    """
+take in the base folder path where the images are saves, create a debug folder
+if one does not exist.
+next look through all files in the folder path and pull out all `.png` that are
+not patterns (indicated with "FINAL" in the name)
+    """
+
+    files_to_process = []  # Get the files in the folder
+
+    debug_path = f"{base_folder_path}\\debug"  # Create a DEBUG Folder
+    Path(debug_path).mkdir(parents=True, exist_ok=True)
+
+    for item in Path(base_folder_path).iterdir():  # Check all files in folder
+        if item.is_file() and item.suffix.lower() == ".png":
+            if "FINAL" not in str(item):  # Exclude Patterns
+                files_to_process.append(str(item))
+
+    return debug_path, files_to_process
 
 
 # -------------------------------------------------------------- Called By Main
@@ -162,7 +185,7 @@ def recolor_image(img, pandas_colors):
     return img
 
 
-def create_side_by_side(img_path, debug_path,  img1, img2, bckgnd_color):
+def create_side_by_side(img_path, debug_path, img1, img2, bckgnd_color):
     """Combines two images side-by-side using the Pillow library."""
 
     # Calculate the total width of the new image
@@ -285,7 +308,7 @@ def add_grid(img):
     return image
 
 
-def duplicate_checking(color_chart, original_path, scaled_path):
+def duplicate_checking(color_chart, original_path, scaled_path, debug_path):
     # Find Color Duplicates
     symbol_idx = 0
     color_list = color_chart['DMC Number'].tolist()
@@ -301,7 +324,8 @@ def duplicate_checking(color_chart, original_path, scaled_path):
     w, h = base.size
 
     # Open the scalled/recolored/gridded Image
-    scaled = Image.open(scaled_path).convert("RGBA")
+    # scaled = Image.open(scaled_path).convert("RGBA")
+    scaled = scaled_path.convert("RGBA")
 
     symbol_list = get_symbol_list()
 
@@ -329,14 +353,15 @@ def duplicate_checking(color_chart, original_path, scaled_path):
                         scaled.paste(symbol, (px, py), symbol)
 
     # Save Image
-    output_path = original_path.replace("crop.png", "duplicate.png")
+    output_path = original_path.replace(".png", "_duplicate.png")
 
     # # Convert back to PIL Image and save
     # output_path = image_path.replace("crop.png", "recolor.png")
     # result_img = Image.fromarray(data)
     scaled.save(output_path)
     # pprint(f"recolor_image > Recolored image saved to {output_path}")
-    create_side_by_side(scaled_path, output_path, (245, 242, 208, 1))
+    create_side_by_side(original_path, debug_path, base, scaled, (245, 242, 208, 1))
+        # scaled_path, output_path, (245, 242, 208, 1))
 
     # scaled.show()
 
@@ -372,15 +397,15 @@ def add_symbols(base, scaled, color_chart):
     # color_key['Symbol'] = ""
 
     color_chart['Symbol'] = ''
-    print(color_chart)
-    print()
+    # print(color_chart)
+    # print()
 
     # Apply Symbols
     for idx, (_, row) in enumerate(color_chart.iterrows()):
         target_color = rgb_to_rgba(row["Color Match RGB"])
         color_correct = color_correction(target_color)
-        print()
-        print("DEBUG:", idx, "\t", target_color, "\tColor Correction: ", color_correct)
+        # print()
+        # print("DEBUG:", idx, "\t", target_color, "\tColor Correction: ", color_correct)
 
         if idx < len(symbol_list):
             # print(idx, len(symbol_list))
@@ -393,13 +418,9 @@ def add_symbols(base, scaled, color_chart):
                 arr[..., :3] = 255 - arr[..., :3]
                 symbol = Image.fromarray(arr, "RGBA")
 
-            # print(row['Original RGBA'])
-            # print(type(row['Original RGBA']))
-            # print(tuple(map(int, row['Original RGBA'].split())))
-            
-            # break
-            for y in range(base_w):
-                for x in range(base_h):
+            for x in range(base_w):
+                for y in range(base_h):
+                    # print(f"base_w: {y}\tbase_h: {x}\t{base_pixels[x, y][:4]}")
                     if base_pixels[x, y][:4] == (0, 0, 0, 0):
                         continue
                     if base_pixels[x, y][:4] == tuple(map(int, row['Original RGBA'].split())):
@@ -409,77 +430,7 @@ def add_symbols(base, scaled, color_chart):
 
                         scaled.paste(symbol, (px, py), symbol)
 
-    # scaled.show()
     return color_chart, scaled
-
-# //// CAUTION TAPE //// CAUTION TAPE //// CAUTION TAPE //// CAUTION TAPE ////
-# //// CAUTION TAPE //// CAUTION TAPE //// CAUTION TAPE //// CAUTION TAPE ////
-# //// CAUTION TAPE //// CAUTION TAPE //// CAUTION TAPE //// CAUTION TAPE ////
-
-# def add_symbols(base, gridded, color_chart):
-
-#     # Get the Base Image loaded as a refrence
-#     # base = Image.open(base_image_path).convert("RGBA")
-#     w, h = base.size
-#     base_pixels = base.load()
-
-#     # Open the scalled/recolored/gridded Image
-#     # gridded = Image.open(grid_image_path).convert("RGBA")
-
-#     # Symbol List
-#     symbol_list = get_symbol_list()
-
-#     # Handle Pandas Dataframe & Remove Duplicates
-#     color_key = color_chart[['DMC Number', 'Floss Name',
-#                              'Stitch Count', 'Color Match RGB']]
-#     color_key = color_key.groupby("Floss Name", as_index=False).agg({
-#         'DMC Number': 'first',
-#         'Stitch Count': 'sum',
-#         'Color Match RGB': 'first'}).sort_values(by='DMC Number')
-#     color_key = color_key.reset_index(drop=True)
-#     color_key['Symbol'] = ""
-
-#     # Apply Symbols
-#     for idx, (_, row) in enumerate(color_key.iterrows()):
-#         target_color = rgb_to_rgba(row["Color Match RGB"])
-#         color_correct = color_correction(target_color)
-#         # print(idx, target_color, "Color Correction: ", color_correct)
-
-#         if idx < len(symbol_list):
-#             # print(idx, len(symbol_list))
-#             symbol = Image.open(symbol_list[idx]).convert("RGBA")
-#             symbol = symbol.resize((SCALE, SCALE))
-#             color_key.loc[idx, 'Symbol'] = symbol_list[idx]
-
-#             if color_correct:
-#                 arr = np.array(symbol)
-#                 arr[..., :3] = 255 - arr[..., :3]
-#                 symbol = Image.fromarray(arr, "RGBA")
-
-#             for y in range(h):
-#                 for x in range(w):
-#                     # if base_pixels[x, y] == target_color:
-#                     if base_pixels[x, y][:4] == target_color[:4]:
-#                         px = x * SCALE
-#                         py = y * SCALE
-
-#                         gridded.paste(symbol, (px, py), symbol)
-
-#     gridded.show()
-
-#     return color_key, gridded
-
-
-
-
-# def add_symbols(base, scaled, color_chart):
-
-
-
-
-
-
-
 
 
 def create_color_key(key):
@@ -548,30 +499,6 @@ def create_color_key(key):
     return image
 
 
-# def combine_image_and_key(key_path, image_path):
-
-#     # Get Image Dimensions
-#     img = Image.open(image_path).convert("RGBA")
-#     img_w, img_h = img.size
-
-#     # Get Key Dimensions
-#     key = Image.open(key_path).convert("RGBA")
-#     key_w, key_h = key.size
-
-#     max_h = max(img_h, key_h)
-#     sum_w = img_w + key_w
-
-#     canvas = Image.new("RGB", size=(sum_w, max_h), color=(255, 255, 255))
-#     # canvas = ImageDraw.Draw(image)
-#     canvas.paste(img, (0, 0), mask=img) # Use mask to maintain transparency
-#     canvas.paste(key, (img_w, 0), mask=key) # Use mask to maintain transparency
-
-#     output_path = image_path.replace("_icons.png", "_FINAL.png")
-#     canvas.save(output_path)
-#     print(f"Final image saved to {output_path}")
-#     canvas.save(output_path)
-
-
 def combine_image_and_key(key, img, og_image_path):
 
     # Convert key to RGBA so it's guaranteed to have an alpha channel
@@ -597,8 +524,26 @@ def combine_image_and_key(key, img, og_image_path):
     output_path = og_image_path.replace(".png", "_FINAL.png")
     canvas.save(output_path)
 
-    print(f"Final image saved to {output_path}")
+    pprint(f"Final image saved to {output_path}")
 
+
+# ------------------------------------------------------------- Make Color List
+def colors_needed(color_list, color_key, img_path):
+    # print(color_key)
+
+    file_name = os.path.basename(img_path).split(".")[0]
+    # print(file_name)
+
+    for _, row in color_key.iterrows():
+        dmc = row['DMC Number']
+        if dmc in color_list:
+            if file_name not in color_list[dmc]:
+                color_list[dmc].append(file_name)
+        else:
+            color_list[dmc] = [file_name]
+
+
+    return color_list
 
 # -------------------------------------------------------- Supporting Functions
 def prep_dmc_color_lst():
